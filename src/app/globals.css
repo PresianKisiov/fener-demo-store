@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+/* Design tokens. "Фенер": a cool evening room and one warm pool of lamplight. */
+@theme {
+  --color-night: #1d2836;
+  --color-paper: #eef1f4;
+  --color-mist: #e3e8ee;
+  --color-glow: #ffd27a;
+  --color-brass: #8a5a14;
+  --color-sale: #a3261e;
+  --color-ok: #2f6b3a;
+  --color-ink-soft: #4a5868;
+  --color-line: #c8d0d9;
+
+  --font-display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --font-sans: "Golos Text", system-ui, sans-serif;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-night);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  font-feature-settings: "tnum" 0;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-night);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The one signature element: a lamp drawing sitting in a pool of warm light. */
+.glow-plate {
+  background:
+    radial-gradient(circle at 50% 46%, rgb(255 210 122 / 0.95) 0%, rgb(255 210 122 / 0.45) 26%, rgb(255 210 122 / 0) 60%),
+    var(--color-mist);
+}
+
+/* Page-load moment on the home page only: the hero lamp switches on once. */
+@media (prefers-reduced-motion: no-preference) {
+  .switch-on {
+    animation: switch-on 1.4s ease-out 0.3s both;
+  }
+  @keyframes switch-on {
+    0% { opacity: 0; }
+    35% { opacity: 0.6; }
+    45% { opacity: 0.25; }
+    100% { opacity: 1; }
+  }
+}
+
+/* Component classes live in a layer, so Tailwind utilities (bg-*, w-*) can override them. */
+@layer components {
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border-radius: 999px;
+  background: var(--color-night);
+  color: #fff;
+  font-weight: 600;
+  transition: background-color 0.15s;
+}
+.btn-primary:hover { background: #2b3a4d; }
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-night);
+  font-weight: 500;
+  background: transparent;
+}
+.btn-secondary:hover { background: var(--color-mist); }
+
+.field {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  background: #fff;
+}
+.field:focus { border-color: var(--color-night); outline: none; box-shadow: 0 0 0 3px rgb(29 40 54 / 0.15); }
+.field[aria-invalid="true"] { border-color: var(--color-sale); }
+
+.label { display: block; font-weight: 500; margin-bottom: 0.35rem; }
+.error-text { color: var(--color-sale); font-size: 0.9rem; margin-top: 0.3rem; }
+
+.prose-shop p + p { margin-top: 0.8rem; }
+}
+
+/* Admin panel tokens (light dashboard style). */
+@theme {
+  --color-adm-bg: #f5f6fa;
+  --color-adm-ink: #202224;
+  --color-adm-muted: #646464;
+  --color-adm-line: #e7e9ee;
+  --color-adm-blue: #2f64e0;
+  --color-adm-blue-soft: #e8efff;
+  --color-adm-chart: #4880ff;
+  --color-adm-up: #00866f;
+  --color-adm-down: #d92d50;
+  --font-admin: "Nunito Sans", system-ui, sans-serif;
+}
+
+@layer components {
+.admin-root {
+  font-family: var(--font-admin);
+  color: var(--color-adm-ink);
+  background: var(--color-adm-bg);
+}
+.adm-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgb(16 24 40 / 0.04); }
+.adm-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 40px; padding: 0 1.1rem; border-radius: 10px;
+  background: var(--color-adm-blue); color: #fff; font-weight: 700; font-size: 0.9rem;
+}
+.adm-btn:hover { background: #2754c4; }
+.adm-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.adm-btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 40px; padding: 0 1.1rem; border-radius: 10px;
+  border: 1px solid #d5d9e2; background: #fff; color: var(--color-adm-ink); font-weight: 600; font-size: 0.9rem;
+}
+.adm-btn-ghost:hover { background: var(--color-adm-bg); }
+.adm-input {
+  display: block; width: 100%; min-height: 42px; padding: 0.5rem 0.8rem;
+  border: 1px solid #d5d9e2; border-radius: 10px; background: #fff; font-size: 0.95rem;
+}
+.adm-input:focus { outline: none; border-color: var(--color-adm-blue); box-shadow: 0 0 0 3px rgb(47 100 224 / 0.18); }
+.adm-label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--color-adm-ink); }
+.adm-th { padding: 0.85rem 1rem; font-size: 0.8rem; font-weight: 800; color: var(--color-adm-ink); background: #f1f4f9; text-align: left; white-space: nowrap; }
+.adm-td { padding: 0.85rem 1rem; font-size: 0.9rem; border-top: 1px solid var(--color-adm-line); }
+}
+
+.admin-root :focus-visible { outline-color: var(--color-adm-blue); }
