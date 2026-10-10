@@ -8,14 +8,18 @@ export function SubmitButton({
   className = "btn-primary",
   name,
   value,
+  pending: pendingProp,
 }: {
   children: React.ReactNode;
   pendingText?: string;
   className?: string;
   name?: string;
   value?: string;
+  /** For forms sent from code (startTransition), where useFormStatus does not see the request. */
+  pending?: boolean;
 }) {
-  const { pending } = useFormStatus();
+  const status = useFormStatus();
+  const pending = pendingProp ?? status.pending;
   return (
     <button type="submit" className={className} disabled={pending} aria-busy={pending} name={name} value={value}>
       {pending && pendingText ? pendingText : children}

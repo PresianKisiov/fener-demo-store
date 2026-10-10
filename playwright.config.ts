@@ -20,6 +20,12 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     ...devices["Pixel 7"],
     trace: "retain-on-failure",
+    // Most tests start with cookies already chosen, so the banner does not cover buttons.
+    // The banner itself has its own test (consent.spec.ts) with an empty browser.
+    storageState: {
+      cookies: [{ name: "fener_consent", value: "necessary", domain: "localhost", path: "/", expires: -1, httpOnly: false, secure: false, sameSite: "Lax" }],
+      origins: [],
+    },
   },
   webServer: {
     command: pgUrl
@@ -39,6 +45,9 @@ export default defineConfig({
       // No network in tests: both couriers are simulated.
       ECONT_MODE: "mock",
       SPEEDY_MODE: "mock",
+      MOCK_COURIER_STEP_MINUTES: "0",
+      // A made-up Pixel id: the browser test intercepts the request to Meta.
+      META_PIXEL_ID: "1234567890",
     },
   },
 });

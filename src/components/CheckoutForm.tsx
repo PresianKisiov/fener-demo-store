@@ -6,8 +6,9 @@
  * validates everything again and recalculates the prices from the database.
  */
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useEffect, useState } from "react";
 import { placeOrderAction, type CheckoutState } from "@/app/actions/checkout";
+import { suggestEmail } from "@/lib/email-typo";
 import { formatEur } from "@/lib/money";
 import { priceCart, shippingPrice, type PricingLine } from "@/lib/pricing";
 import {
@@ -18,6 +19,7 @@ import {
   type DeliveryType,
   type PaymentMethod,
 } from "@/lib/settings";
+import { CityPicker } from "./CityPicker";
 import { SubmitButton } from "./SubmitButton";
 
 type OfficeCity = { courier: string; kind: string; city: string };
@@ -80,8 +82,16 @@ function Choice({
   );
 }
 
-export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[]; cities: OfficeCity[] }) {
-  const [state, formAction] = useActionState<CheckoutState, FormData>(placeOrderAction, { errors: {}, values: {} });
+export function CheckoutForm({
+  lines,
+  cities: allCities,
+  simulatedCouriers = [],
+}: {
+  lines: PricingLine[];
+  cities: OfficeCity[];
+  simulatedCouriers?: string[];
+}) {
+  const [state, formAction, pending] = useActionState<CheckoutState, FormData>(placeOrderAction, { errors: {}, values: {} });
   const v = state.values;
   const e = state.errors;
 
@@ -89,6 +99,8 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
   const [deliveryType, setDeliveryType] = useState<DeliveryType>((v.deliveryType as DeliveryType) || "office");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>((v.paymentMethod as PaymentMethod) || "cod");
   const [city, setCity] = useState(v.officeCity ?? "");
+  const [officeId, setOfficeId] = useState(v.officeId ?? "");
+  const [emailHint, setEmailHint] = useState<string | null>(null);
 
   const subtotal = lines.reduce((s, l) => s + l.unitPriceCents * l.quantity, 0);
   const preview = priceCart({ lines, deliveryType, paymentMethod });
@@ -98,8 +110,28 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
 
   const err = (key: string) => (e[key] ? { "aria-invalid": true as const, "aria-describedby": `${key}-error` } : {});
 
+  // A city with a single office: choose it for the customer, one tap less.
+  const onlyOffice = cityOffices.length === 1 ? cityOffices[0].id : null;
+  useEffect(() => {
+    if (onlyOffice) setOfficeId((current) => current || onlyOffice);
+  }, [onlyOffice]);
+
+  function chooseCity(next: string) {
+    setCity(next);
+    setOfficeId("");
+  }
+
+  // React clears a form after its action runs. On a validation error that would wipe
+  // everything the customer typed (city, office, address). Sending the form ourselves
+  // inside a transition skips that reset; without JavaScript the plain `action` still works.
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    startTransition(() => formAction(data));
+  }
+
   return (
-    <form action={formAction} noValidate className="grid gap-10 lg:grid-cols-[1fr_24rem]">
+    <form action={formAction} onSubmit={onSubmit} noValidate className="grid gap-10 lg:grid-cols-[1fr_24rem]">
       <div className="space-y-10">
         {state.formError && (
           <p role="alert" className="rounded-2xl border-[1.5px] border-sale bg-white p-4 text-sale">
@@ -127,8 +159,35 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
             </div>
             <div>
               <label htmlFor="email" className="label">Имейл</label>
-              <input id="email" name="email" type="email" autoComplete="email" className="field" defaultValue={v.email} aria-describedby="email-hint" {...err("email")} />
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                className="field"
+                defaultValue={v.email}
+                aria-describedby="email-hint"
+                onBlur={(event) => setEmailHint(suggestEmail(event.target.value.trim()))}
+                {...err("email")}
+              />
               <p id="email-hint" className="mt-1 text-sm text-ink-soft">Изпращаме потвърждението на поръчката тук.</p>
+              {emailHint && (
+                <p className="mt-1 text-sm" role="status">
+                  Имаше предвид{" "}
+                  <button
+                    type="button"
+                    className="font-semibold underline"
+                    onClick={() => {
+                      const input = document.getElementById("email") as HTMLInputElement;
+                      input.value = emailHint;
+                      setEmailHint(null);
+                    }}
+                  >
+                    {emailHint}
+                  </button>
+                  ?
+                </p>
+              )}
               <FieldError id="email-error" message={e.email} />
             </div>
           </div>
@@ -138,7 +197,15 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
           <legend className="font-display text-xl font-medium">2. Доставка</legend>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {(Object.keys(COURIERS) as CourierId[]).map((c) => (
-              <Choice key={c} name="courier" value={c} checked={courier === c} onChange={() => { setCourier(c); setCity(""); }} title={COURIERS[c]} />
+              <Choice
+                key={c}
+                name="courier"
+                value={c}
+                checked={courier === c}
+                onChange={() => { setCourier(c); chooseCity(""); }}
+                title={COURIERS[c]}
+                note={simulatedCouriers.includes(c) ? "Демо: само няколко примерни офиса" : undefined}
+              />
             ))}
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -150,7 +217,7 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
                   name="deliveryType"
                   value={t}
                   checked={deliveryType === t}
-                  onChange={() => { setDeliveryType(t); setCity(""); }}
+                  onChange={() => { setDeliveryType(t); chooseCity(""); }}
                   title={DELIVERY_TYPES[t]}
                   note={price === 0 ? "безплатно" : formatEur(price)}
                 />
@@ -180,12 +247,7 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
             <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_2fr]">
               <div>
                 <label htmlFor="officeCity" className="label">Град</label>
-                <select id="officeCity" name="officeCity" className="field" value={city} onChange={(ev) => setCity(ev.target.value)}>
-                  <option value="">Избери град</option>
-                  {cities.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                <CityPicker id="officeCity" name="officeCity" cities={cities} value={city} onChange={chooseCity} />
               </div>
               <div>
                 <label htmlFor="officeId" className="label">{deliveryType === "locker" ? "Автомат" : "Офис"}</label>
@@ -193,8 +255,8 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
                   id="officeId"
                   name="officeId"
                   className="field"
-                  defaultValue={v.officeId}
-                  key={`${courier}-${deliveryType}-${city}-${cityOffices.length}`}
+                  value={officeId}
+                  onChange={(event) => setOfficeId(event.target.value)}
                   disabled={!city || loading}
                   {...err("officeId")}
                 >
@@ -260,7 +322,7 @@ export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[
           </label>
         </div>
 
-        <SubmitButton className="btn-primary mt-6 w-full" pendingText="Изпращаме поръчката...">
+        <SubmitButton className="btn-primary mt-6 w-full" pendingText="Изпращаме поръчката..." pending={pending}>
           Поръчка със задължение за плащане
         </SubmitButton>
       </aside>

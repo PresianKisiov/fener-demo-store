@@ -24,6 +24,7 @@ const ACTOR: Record<string, string> = {
   seed: "демо данни",
   "webhook:mock": "webhook от тестовия доставчик",
   "webhook:stripe": "webhook от Stripe",
+  system: "системата",
   "courier:econt": "Еконт, при проверка на статуса",
   "courier:speedy": "Спиди, при проверка на статуса",
 };

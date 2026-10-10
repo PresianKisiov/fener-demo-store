@@ -138,8 +138,8 @@ describe("Econt", () => {
         ),
       );
       const results = await econtAdapter("demo").track([
-        { trackingNumber: "1051604334939", current: "created" },
-        { trackingNumber: "123", current: "created" },
+        { trackingNumber: "1051604334939", current: "created", createdAt: new Date() },
+        { trackingNumber: "123", current: "created", createdAt: new Date() },
       ]);
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ state: "created", statusText: "Очаква предаване към Еконт" });

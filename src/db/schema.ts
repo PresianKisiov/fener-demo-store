@@ -7,6 +7,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  customType,
   integer,
   jsonb,
   pgTable,
@@ -57,6 +58,25 @@ export const products = pgTable("products", {
   safetyWarnings: text("safety_warnings").notNull().default(""),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Binary data (the image bytes). PGlite returns Uint8Array, postgres-js a Buffer; both are Uint8Array.
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataType: () => "bytea" });
+
+// Product photos, stored in Postgres. For 20 products with 4 photos of ~150 KB that is
+// about 12 MB, well inside Neon's free 0.5 GB. A big catalog would move them to a file store.
+export const productImages = pgTable("product_images", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  contentType: text("content_type").notNull(),
+  data: bytea("data").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  createdAt: createdAt(),
 });
 
 // Every price a product has ever had. The Omnibus "prior price" is
@@ -231,14 +251,24 @@ export const withdrawals = pgTable("withdrawals", {
   refundedAt: timestamp("refunded_at", { withTimezone: true }),
 });
 
-// Outbox: in the demo, emails are stored here instead of being sent.
-// A real provider (Resend, Postmark) would plug into src/lib/email.ts.
+// Outbox: every email is written here first, in the same transaction as the change
+// that caused it (order placed, shipped...). It is sent after that transaction is
+// saved (src/server/email.ts). So an email never goes out for an order that was
+// rolled back, and an email the provider refused is not lost: it waits for a retry.
 export const emails = pgTable("emails", {
   id: serial("id").primaryKey(),
   toAddress: text("to_address").notNull(),
   subject: text("subject").notNull(),
   body: text("body").notNull(),
   orderId: integer("order_id"),
+  // "demo" (no provider set up, only stored) | "pending" | "sending" | "sent" | "failed"
+  status: text("status").notNull().default("demo"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  providerId: text("provider_id"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  // When a sender took it from the queue. Lets a stuck "sending" go back to the queue.
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -258,6 +288,7 @@ export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type CourierOffice = typeof courierOffices.$inferSelect;
 export type Shipment = typeof shipments.$inferSelect;
+export type ProductImage = typeof productImages.$inferSelect;
 
 // Admin accounts. The password is never stored, only a scrypt hash of it (see src/lib/password.ts).
 export const admins = pgTable("admins", {

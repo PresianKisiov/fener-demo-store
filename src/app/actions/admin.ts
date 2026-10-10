@@ -16,6 +16,7 @@ import { missingSafetyFields } from "@/lib/gpsr";
 import { slugify } from "@/lib/slug";
 import { audit } from "@/server/audit";
 import { checkCredentials, endAdminSession, requireAdmin, startAdminSession } from "@/server/auth";
+import { retryFailedEmails } from "@/server/email";
 import { OrderError, shipOrder, transitionOrder } from "@/server/orders";
 
 export type LoginState = { error?: string; email?: string };
@@ -218,4 +219,11 @@ export async function updateStockAction(formData: FormData) {
   await db.update(products).set({ stock, updatedAt: new Date() }).where(eq(products.id, id));
   await audit(db, { entity: "product", entityId: id, action: `stock -> ${stock}`, actor: "admin" });
   revalidatePath("/admin/nalichnosti");
+}
+
+/** Puts failed emails back in the queue and sends them. */
+export async function retryEmailsAction() {
+  await requireAdmin();
+  await retryFailedEmails();
+  revalidatePath("/admin/imeyli");
 }

@@ -2,22 +2,58 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AddToCartForm } from "@/components/AddToCartForm";
-import { LampArt } from "@/components/LampArt";
+import { ProductGallery } from "@/components/ProductGallery";
+import { MetaEvent } from "@/components/MetaPixel";
 import { PriceBlock } from "@/components/PriceBlock";
 import { addWorkingDays, formatDayRange } from "@/lib/dates";
 import { SHOP } from "@/lib/settings";
 import { getPublishedProduct } from "@/server/catalog";
+import { imagesFor } from "@/server/images";
+import { getBaseUrl } from "@/server/base-url";
 
 type Props = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getPublishedProduct((await params).slug);
-  return product ? { title: product.name, description: product.shortDescription } : {};
+  if (!product) return {};
+  const base = await getBaseUrl();
+  const first = (await imagesFor([product.id])).get(product.id)?.[0];
+  return {
+    title: product.name,
+    description: product.shortDescription,
+    alternates: { canonical: `${base}/produkt/${product.slug}` },
+    // What Facebook, Viber and Google show when someone shares the link.
+    openGraph: {
+      type: "website",
+      title: product.name,
+      description: product.shortDescription,
+      url: `${base}/produkt/${product.slug}`,
+      ...(first ? { images: [{ url: `${base}/api/images/${first.id}`, width: first.width, height: first.height }] } : {}),
+    },
+  };
 }
 
 export default async function ProductPage({ params }: Props) {
   const product = await getPublishedProduct((await params).slug);
   if (!product) notFound();
+  const images = (await imagesFor([product.id])).get(product.id) ?? [];
+  const base = await getBaseUrl();
+  // Structured data: lets Google show price and availability under the search result.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.shortDescription,
+    sku: product.modelNumber || String(product.id),
+    image: images.map((i) => `${base}/api/images/${i.id}`),
+    offers: {
+      "@type": "Offer",
+      url: `${base}/produkt/${product.slug}`,
+      priceCurrency: "EUR",
+      price: (product.priceCents / 100).toFixed(2),
+      availability: product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+    },
+  };
 
   const now = new Date();
   const delivery = formatDayRange(
@@ -27,6 +63,15 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        // "<" is escaped so a product name can never close the script tag.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
+      />
+      <MetaEvent
+        name="ViewContent"
+        params={{ content_ids: [String(product.id)], content_type: "product", content_name: product.name, currency: "EUR", value: product.priceCents / 100 }}
+      />
       <nav aria-label="Път" className="text-sm text-ink-soft">
         <Link href="/katalog" className="hover:underline">Лампи</Link>
         <span aria-hidden="true"> / </span>
@@ -34,8 +79,8 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       <div className="mt-6 grid gap-10 md:grid-cols-2">
-        <div className="glow-plate aspect-square rounded-[36px] p-10 md:sticky md:top-6 md:self-start">
-          <LampArt kind={product.illustration} className="h-full w-full" title={`Рисунка: ${product.name}`} />
+        <div className="md:sticky md:top-6 md:self-start">
+          <ProductGallery name={product.name} illustration={product.illustration} images={images} />
         </div>
 
         <div>
@@ -62,7 +107,7 @@ export default async function ProductPage({ params }: Props) {
           </p>
 
           <div className="mt-6">
-            <AddToCartForm productId={product.id} stock={product.stock} />
+            <AddToCartForm productId={product.id} stock={product.stock} priceCents={product.priceCents} />
           </div>
 
           <ul className="mt-6 space-y-1 border-t border-line pt-5 text-sm">

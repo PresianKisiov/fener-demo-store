@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckoutForm } from "@/components/CheckoutForm";
+import { MetaEvent } from "@/components/MetaPixel";
 import { getCartLines } from "@/server/cart";
+import { COURIERS, type CourierId } from "@/lib/settings";
 import { listOfficeCities } from "@/server/couriers";
+import { courierMode } from "@/server/shipping/config";
 
 export const metadata: Metadata = { title: "Поръчка" };
 
@@ -21,6 +24,15 @@ export default async function CheckoutPage() {
 
   return (
     <>
+      <MetaEvent
+        name="InitiateCheckout"
+        params={{
+          currency: "EUR",
+          value: lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0) / 100,
+          num_items: lines.reduce((sum, l) => sum + l.quantity, 0),
+          content_ids: lines.map((l) => String(l.productId)),
+        }}
+      />
       <h1 className="font-display text-3xl font-medium">Поръчка</h1>
       <div className="mt-8">
         <CheckoutForm
@@ -32,6 +44,13 @@ export default async function CheckoutPage() {
             quantity: l.quantity,
           }))}
           cities={cities}
+          simulatedCouriers={(Object.keys(COURIERS) as CourierId[]).filter((c) => {
+            try {
+              return courierMode(c) === "mock";
+            } catch {
+              return false;
+            }
+          })}
         />
       </div>
     </>

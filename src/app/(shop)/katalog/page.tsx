@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ProductCard } from "@/components/ProductCard";
 import { getPublishedProducts } from "@/server/catalog";
+import { imagesFor } from "@/server/images";
 
 export const metadata: Metadata = { title: "Всички лампи" };
 
 export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ k?: string }> }) {
   const { k } = await searchParams;
   const all = await getPublishedProducts();
+  const images = await imagesFor(all.map((p) => p.id));
   const categories = [...new Set(all.map((p) => p.category))];
   const products = k ? all.filter((p) => p.category === k) : all;
 
@@ -36,7 +38,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       ) : (
         <div className="mt-8 grid grid-cols-2 gap-x-5 gap-y-10 md:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
+            <ProductCard key={p.id} product={p} image={images.get(p.id)?.[0]} />
           ))}
         </div>
       )}

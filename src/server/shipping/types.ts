@@ -63,8 +63,8 @@ export interface CourierAdapter {
   fetchOffices(): Promise<SyncedOffice[]>;
   createShipment(request: ShipmentRequest): Promise<CreatedShipment>;
   cancelShipment(trackingNumber: string): Promise<void>;
-  /** `current` lets the mock courier move a parcel one step forward per check. Real couriers ignore it. */
-  track(items: { trackingNumber: string; current: ShipmentState }[]): Promise<TrackingResult[]>;
+  /** Real couriers need only the numbers. The mock courier uses `createdAt` to decide how far the parcel got. */
+  track(items: { trackingNumber: string; current: ShipmentState; createdAt: Date }[]): Promise<TrackingResult[]>;
   label(trackingNumber: string): Promise<LabelFile>;
 }
 

@@ -16,6 +16,7 @@ import { priceCart } from "@/lib/pricing";
 import { SHOP, type CourierId, type DeliveryType, type PaymentMethod } from "@/lib/settings";
 import { audit } from "./audit";
 import {
+  deliverEmails,
   orderConfirmationEmail,
   refundEmail,
   sendEmail,
@@ -45,7 +46,7 @@ export async function createOrder(input: NewOrderInput, baseUrl: string) {
   if (input.lines.length === 0) throw new OrderError("Количката е празна.");
   const db = await getDb();
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Read current prices and stock from the database.
     const rows = await tx
       .select()
@@ -142,6 +143,9 @@ export async function createOrder(input: NewOrderInput, baseUrl: string) {
 
     return { order, paymentId };
   });
+  // The order is saved: now the confirmation email may leave.
+  await deliverEmails();
+  return result;
 }
 
 async function restoreStock(tx: Tx, orderId: number) {
@@ -209,7 +213,9 @@ export async function transitionOrderTx(tx: Tx, orderId: number, to: OrderStatus
 
 export async function transitionOrder(orderId: number, to: OrderStatus, actor: string) {
   const db = await getDb();
-  return db.transaction((tx) => transitionOrderTx(tx, orderId, to, actor));
+  const order = await db.transaction((tx) => transitionOrderTx(tx, orderId, to, actor));
+  await deliverEmails();
+  return order;
 }
 
 /**
@@ -218,7 +224,7 @@ export async function transitionOrder(orderId: number, to: OrderStatus, actor: s
  */
 export async function shipOrder(orderId: number, actor: string) {
   const db = await getDb();
-  return db.transaction(async (tx) => {
+  const order = await db.transaction(async (tx) => {
     const [active] = await tx
       .select()
       .from(shipments)
@@ -226,6 +232,8 @@ export async function shipOrder(orderId: number, actor: string) {
     if (!active?.trackingNumber) throw new OrderError("Първо създай товарителница (секцията „Товарителница“ по-долу).");
     return transitionOrderTx(tx, orderId, "shipped", actor);
   });
+  await deliverEmails();
+  return order;
 }
 
 export async function getOrderByToken(token: string) {
@@ -266,7 +274,7 @@ export async function requestWithdrawal(input: { number: string; email: string; 
   }
 
   const db = await getDb();
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [withdrawal] = await tx
       .insert(withdrawals)
       .values({ orderId: order.id, customerName: input.customerName, contactEmail: input.email, reason: input.reason })
@@ -276,4 +284,6 @@ export async function requestWithdrawal(input: { number: string; email: string; 
     await sendEmail(tx, input.email, mail.subject, mail.body, order.id);
     return { order: updated, requestedAt: withdrawal.requestedAt };
   });
+  await deliverEmails();
+  return result;
 }

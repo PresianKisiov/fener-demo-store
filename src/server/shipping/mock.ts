@@ -2,20 +2,27 @@
  * Mock courier: behaves like a courier API, but everything happens inside this app.
  * Used for Speedy until you have an API account, and for the automated tests.
  *
- * Every status check moves a parcel one step forward:
- * created -> in_transit -> delivered. So you can click through the whole flow in minutes.
+ * The parcel moves with time, like a real one: picked up MOCK_COURIER_STEP_MINUTES
+ * after the waybill (default 2), delivered after twice that. Checking more often
+ * does not move it faster. Tests set the step to 0: delivered at the first check.
  */
 import type { CourierId } from "../../lib/settings";
 import { DEMO_OFFICES } from "../../db/demo-offices";
 import type { CourierAdapter, ShipmentState, TrackingEvent } from "./types";
 
-const NEXT: Record<ShipmentState, ShipmentState> = {
-  created: "in_transit",
-  in_transit: "delivered",
-  delivered: "delivered",
-  returned: "returned",
-  cancelled: "cancelled",
-};
+function stepMs() {
+  const minutes = Number(process.env.MOCK_COURIER_STEP_MINUTES ?? 2);
+  return (Number.isFinite(minutes) && minutes >= 0 ? minutes : 2) * 60_000;
+}
+
+/** Where a parcel created at `createdAt` is now. */
+export function mockState(createdAt: Date, now = Date.now()): ShipmentState {
+  const elapsed = now - createdAt.getTime();
+  const step = stepMs();
+  if (elapsed >= 2 * step) return "delivered";
+  if (elapsed >= step) return "in_transit";
+  return "created";
+}
 
 const TEXT: Record<ShipmentState, string> = {
   created: "Очаква предаване към куриера",
@@ -25,12 +32,11 @@ const TEXT: Record<ShipmentState, string> = {
   cancelled: "Анулирана",
 };
 
-function events(state: ShipmentState): TrackingEvent[] {
+function events(state: ShipmentState, createdAt: Date): TrackingEvent[] {
   const order: ShipmentState[] = ["created", "in_transit", "delivered"];
   const upTo = order.indexOf(state);
-  const now = Date.now();
   return order.slice(0, upTo + 1).map((s, i) => ({
-    time: new Date(now - (upTo - i) * 60_000).toISOString(),
+    time: new Date(createdAt.getTime() + i * stepMs()).toISOString(),
     text: TEXT[s],
     place: s === "in_transit" ? "Сортировъчен център (демо)" : null,
   }));
@@ -56,9 +62,12 @@ export function mockAdapter(courier: CourierId): CourierAdapter {
     async cancelShipment() {},
 
     async track(items) {
-      return items.map(({ trackingNumber, current }) => {
-        const state = NEXT[current];
-        return { trackingNumber, state, statusText: TEXT[state], events: events(state) };
+      return items.map(({ trackingNumber, current, createdAt }) => {
+        // A parcel never moves backwards (for example after the step setting changes).
+        const order: ShipmentState[] = ["created", "in_transit", "delivered"];
+        const byTime = mockState(createdAt);
+        const state = order.indexOf(current) > order.indexOf(byTime) ? current : byTime;
+        return { trackingNumber, state, statusText: TEXT[state], events: events(state, createdAt) };
       });
     },
 

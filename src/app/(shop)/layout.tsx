@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { getCartCount } from "@/server/cart";
 import { SHOP } from "@/lib/settings";
+import { ConsentBanner, ConsentSettingsLink } from "@/components/ConsentBanner";
+import { MetaPixel } from "@/components/MetaPixel";
 
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
   const cartCount = await getCartCount();
   return (
     <>
+      <MetaPixel pixelId={process.env.META_PIXEL_ID?.trim() || null} />
+      <ConsentBanner />
       <div className="bg-night px-4 py-2 text-center text-sm text-white">
         Това е демо магазин. Продуктите и фирмата са измислени, поръчките не се изпращат.
       </div>
@@ -54,6 +58,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
             <li><Link className="underline-offset-4 hover:underline" href="/usloviya">Общи условия и доставка</Link></li>
             <li><Link className="underline-offset-4 hover:underline" href="/prosledyavane">Проследяване на поръчка</Link></li>
             <li><Link className="font-semibold underline underline-offset-4" href="/otkaz">Отказ от договора тук</Link></li>
+            <li><ConsentSettingsLink /></li>
           </ul>
           <div className="text-ink-soft">
             <p>Плащане при доставка или с карта. Доставка с Еконт и Спиди.</p>

@@ -16,12 +16,20 @@ test("cash on delivery: order, admin processes it, customer tracks it and withdr
   await fillContact(page, "ivan@example.com");
   await page.getByRole("radio", { name: /Еконт/ }).check();
   await page.getByRole("radio", { name: /До офис/ }).check();
-  await page.getByLabel("Град", { exact: true }).selectOption("Габрово");
+  // Type a few letters and pick the city from the list.
+  await page.getByLabel("Град", { exact: true }).fill("габ");
+  await page.getByRole("option", { name: "Габрово" }).click();
   // The offices of the city come from /api/offices after the city is chosen.
   await page.getByLabel("Офис", { exact: true }).selectOption({ index: 1 });
   await page.getByRole("radio", { name: /Наложен платеж/ }).check();
   // 2 x 24,90 = 49,80 + 3,90 office + 1,00 COD fee = 54,70
   await expect(page.getByTestId("checkout-total")).toContainText("54,70");
+  // Forgetting the terms must not wipe the city, the office or the typed data.
+  await page.getByRole("button", { name: "Поръчка със задължение за плащане" }).click();
+  await expect(page.getByText("За да поръчаш, приеми общите условия.")).toBeVisible();
+  await expect(page.getByLabel("Град", { exact: true })).toHaveValue("Габрово");
+  await expect(page.getByLabel("Офис", { exact: true })).not.toHaveValue("");
+  await expect(page.getByLabel("Мобилен телефон")).toHaveValue("0888 123 456");
   await page.getByLabel(/Приемам/).check();
   await page.getByRole("button", { name: "Поръчка със задължение за плащане" }).click();
 
@@ -55,11 +63,11 @@ test("cash on delivery: order, admin processes it, customer tracks it and withdr
   expect(label.status()).toBe(200);
   expect(await label.text()).toContain(trackingNumber!);
 
-  // Each status check moves the mock parcel one step: picked up, then delivered.
-  await page.getByRole("button", { name: "Провери статуса" }).click();
-  await expect(page.getByTestId("order-status")).toHaveText("Изпратена");
+  // In tests the mock courier has no waiting time (MOCK_COURIER_STEP_MINUTES=0): one check finds it delivered.
   await page.getByRole("button", { name: "Провери статуса" }).click();
   await expect(page.getByTestId("order-status")).toHaveText("Доставена");
+  // Both steps are in the history: picked up (shipped), then delivered.
+  await expect(page.getByText("Изпратена", { exact: true })).toBeVisible();
   await expect(page.getByTestId("courier-status")).toContainText("Доставена");
 
   // Customer checks the status.

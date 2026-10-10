@@ -91,3 +91,44 @@ test("admin refreshes a courier office list", async ({ page }) => {
   await page.getByRole("button", { name: "Обнови офисите от Спиди" }).click();
   await expect(page.getByText("Спиди: записани 6 офиса и автомата.")).toBeVisible();
 });
+
+// A 1x1 PNG. The browser turns it into WebP before upload, like a phone photo.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+test("admin uploads a product photo and the shop shows it", async ({ page }) => {
+  await loginAsAdmin(page);
+  // Product 2 is "Отметка" in the demo data.
+  await page.goto("/admin/produkti/2");
+  await expect(page.getByRole("heading", { level: 1, name: "Лампа за книга „Отметка“" })).toBeVisible();
+  await page.getByLabel("Добави снимки").setInputFiles({ name: "lampa.png", mimeType: "image/png", buffer: PNG });
+  await expect(page.getByText("Качени снимки: 1.")).toBeVisible();
+  const src = await page.getByRole("img", { name: /Лампа за книга „Отметка“, снимка 1/ }).getAttribute("src");
+  const image = await page.request.get(src!);
+  expect(image.status()).toBe(200);
+  expect(image.headers()["content-type"]).toMatch(/image\/(webp|jpeg)/);
+
+  await page.goto("/produkt/lampa-za-kniga-otmetka");
+  await expect(page.locator(`img[src="${src}"]`)).toBeVisible();
+});
+
+test("search engines are kept away from the demo, the sitemap lists products", async ({ request }) => {
+  expect(await (await request.get("/robots.txt")).text()).toContain("Disallow: /");
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  expect(sitemap).toContain("/produkt/lampa-za-kniga-otmetka");
+});
+
+test("photos of a hidden product are visible only to the admin", async ({ page, request }) => {
+  await loginAsAdmin(page);
+  // Product 8, "Кула", is the unpublished draft in the demo data.
+  await page.goto("/admin/produkti/8");
+  await page.getByLabel("Добави снимки").setInputFiles({ name: "kula.png", mimeType: "image/png", buffer: PNG });
+  await expect(page.getByText("Качени снимки: 1.")).toBeVisible();
+  const src = await page.getByRole("img", { name: /снимка 1/ }).getAttribute("src");
+  expect((await page.request.get(src!)).status()).toBe(200); // admin session
+  expect((await request.get(src!)).status()).toBe(404); // a visitor
+});
+
+test("the hourly job cannot be started from outside", async ({ request }) => {
+  expect((await request.post("/api/cron")).status()).toBe(401);
+  expect((await request.post("/api/cron", { headers: { authorization: "Bearer guess" } })).status()).toBe(401);
+});

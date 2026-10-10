@@ -8,6 +8,8 @@ import { formatDateTime } from "@/lib/dates";
 import { formatEur } from "@/lib/money";
 import { lowestPriceBefore } from "@/lib/omnibus";
 import { requireAdmin } from "@/server/auth";
+import { ImageManager } from "@/components/admin/ImageManager";
+import { imagesFor } from "@/server/images";
 
 export default async function ProductEditPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -18,6 +20,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
   if (!product) notFound();
   const history = await db.select().from(priceHistory).where(eq(priceHistory.productId, id)).orderBy(asc(priceHistory.validFrom));
   const lowest30 = lowestPriceBefore(history, new Date());
+  const images = (await imagesFor([id])).get(id) ?? [];
 
   return (
     <>
@@ -26,6 +29,9 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
       {product.isPublished && (
         <Link href={`/produkt/${product.slug}`} className="mt-1 inline-block text-sm font-semibold text-adm-blue hover:underline">Виж в магазина</Link>
       )}
+      <div className="mt-6">
+        <ImageManager productId={product.id} productName={product.name} images={images} />
+      </div>
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_20rem]">
         <ProductForm product={product} />
         <aside className="adm-card h-fit p-5 text-sm sm:p-6">

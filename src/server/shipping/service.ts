@@ -202,7 +202,9 @@ export async function refreshTracking(actorPrefix = "courier", orderId?: number)
       // Shipments made in another mode (for example demo, before switching to live) are not sent to the courier.
       list = all.filter((r) => r.shipment.mode === adapter.mode && r.shipment.trackingNumber);
       if (list.length === 0) continue;
-      results = await adapter.track(list.map((r) => ({ trackingNumber: r.shipment.trackingNumber!, current: r.shipment.status as ShipmentState })));
+      results = await adapter.track(
+        list.map((r) => ({ trackingNumber: r.shipment.trackingNumber!, current: r.shipment.status as ShipmentState, createdAt: r.shipment.createdAt })),
+      );
     } catch (error) {
       summary.errors.push(error instanceof CourierError ? error.message : `${courier}: неочаквана грешка`);
       if (!(error instanceof CourierError)) console.error(error);

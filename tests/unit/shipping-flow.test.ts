@@ -61,10 +61,17 @@ describe("shipping flow with the mock courier", () => {
     // A second waybill for the same order is refused.
     await expect(createShipmentForOrder(order.id, { weightGrams: 500, description: "Лампи" }, "admin")).rejects.toBeInstanceOf(OrderError);
 
-    // First check: the courier picked it up -> shipped (and the customer gets an email).
+    // The mock parcel moves with time (2 minutes per step). Checking right away changes nothing.
     let summary = await refreshTracking("courier", order.id);
+    expect(summary.changedOrders).toEqual([]);
+    const backdate = (minutes: number) =>
+      db.update(schema.shipments).set({ createdAt: new Date(Date.now() - minutes * 60_000) }).where(eq(schema.shipments.id, shipment.id));
+    // 3 minutes later: picked up -> shipped (and the customer gets an email).
+    await backdate(3);
+    summary = await refreshTracking("courier", order.id);
     expect(summary.changedOrders).toEqual([`${order.number}: shipped`]);
-    // Second check: delivered.
+    // 5 minutes later: delivered. A second check at the same moment does not move it again.
+    await backdate(5);
     summary = await refreshTracking("courier", order.id);
     expect(summary.changedOrders).toEqual([`${order.number}: delivered`]);
 

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { getBaseUrl } from "@/server/base-url";
 import { clearCart, getCartLines } from "@/server/cart";
 import { getOffice } from "@/server/couriers";
+import { emailDomainStatus } from "@/server/email-check";
 import { createOrder, OrderError } from "@/server/orders";
 import { startCardPayment } from "@/server/payments";
 
@@ -63,6 +64,12 @@ export async function placeOrderAction(_prev: CheckoutState, formData: FormData)
     return { errors, values };
   }
   const data = parsed.data;
+
+  // The confirmation and the withdrawal rights go to this address, so a typo matters.
+  if ((await emailDomainStatus(data.email)) === "rejects") {
+    const domain = data.email.split("@").pop();
+    return { errors: { email: `Домейнът „${domain}“ не приема имейли. Провери за грешка в адреса.` }, values };
+  }
 
   let deliveryLabel: string;
   let city: string;

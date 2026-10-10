@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { orders, payments, webhookEvents } from "@/db/schema";
 import { audit } from "../audit";
-import { paymentReceivedEmail, sendEmail } from "../email";
+import { deliverEmails, paymentReceivedEmail, sendEmail } from "../email";
 import { transitionOrderTx } from "../orders";
 
 export type PaymentEvent = {
@@ -28,7 +28,7 @@ export type PaymentEventResult = "processed" | "duplicate" | "unknown_payment" |
 
 export async function handlePaymentEvent(event: PaymentEvent): Promise<PaymentEventResult> {
   const db = await getDb();
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<PaymentEventResult> => {
     const inserted = await tx
       .insert(webhookEvents)
       .values({ provider: event.provider, eventId: event.eventId, type: event.outcome, payload: event.payload })
@@ -66,4 +66,6 @@ export async function handlePaymentEvent(event: PaymentEvent): Promise<PaymentEv
     }
     return "processed";
   });
+  if (result === "processed") await deliverEmails();
+  return result;
 }

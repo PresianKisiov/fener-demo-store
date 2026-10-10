@@ -1,11 +1,17 @@
 "use client";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { trackMeta } from "@/lib/meta-client";
 import { addToCartAction, type AddToCartState } from "@/app/actions/cart";
 import { SubmitButton } from "./SubmitButton";
 
-export function AddToCartForm({ productId, stock }: { productId: number; stock: number }) {
+export function AddToCartForm({ productId, stock, priceCents }: { productId: number; stock: number; priceCents: number }) {
   const [state, formAction] = useActionState<AddToCartState, FormData>(addToCartAction, { added: false });
+
+  // Report the add to Meta once per successful add (does nothing without consent).
+  useEffect(() => {
+    if (state.added) trackMeta("AddToCart", { content_ids: [String(productId)], content_type: "product", currency: "EUR", value: priceCents / 100 });
+  }, [state, productId, priceCents]);
 
   if (stock < 1) {
     return <p className="font-semibold text-sale">Няма наличност в момента.</p>;

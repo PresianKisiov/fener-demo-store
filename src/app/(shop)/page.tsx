@@ -4,9 +4,11 @@ import { ProductCard } from "@/components/ProductCard";
 import { formatEur } from "@/lib/money";
 import { SHOP } from "@/lib/settings";
 import { getPublishedProducts } from "@/server/catalog";
+import { imagesFor } from "@/server/images";
 
 export default async function HomePage() {
   const products = await getPublishedProducts();
+  const images = await imagesFor(products.map((p) => p.id));
 
   return (
     <>
@@ -43,7 +45,7 @@ export default async function HomePage() {
         <h2 className="font-display text-2xl font-medium">Всички лампи</h2>
         <div className="mt-8 grid grid-cols-2 gap-x-5 gap-y-10 md:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
+            <ProductCard key={p.id} product={p} image={images.get(p.id)?.[0]} />
           ))}
         </div>
       </section>
