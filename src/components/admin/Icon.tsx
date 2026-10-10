@@ -20,6 +20,7 @@ const PATHS: Record<string, React.ReactNode> = {
   down: <><path d="M4 8l6 6 4-4 6 6" /><path d="M15 16h5v-5" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   close: <><path d="M6 6l12 12M18 6L6 18" /></>,
+  truck: <><path d="M3 6h11v10H3z" /><path d="M14 10h4l3 3v3h-7" /><circle cx="7" cy="18" r="1.8" /><circle cx="17" cy="18" r="1.8" /></>,
 };
 
 export function Icon({ name, className = "size-5" }: { name: keyof typeof PATHS | string; className?: string }) {

@@ -14,6 +14,7 @@ const NAV = [
   { href: "/admin/poruchki", label: "Поръчки", icon: "orders" },
   { href: "/admin/produkti", label: "Продукти", icon: "products" },
   { href: "/admin/nalichnosti", label: "Наличности", icon: "stock" },
+  { href: "/admin/kurieri", label: "Куриери", icon: "truck" },
   { href: "/admin/otkazi", label: "Откази", icon: "withdrawals" },
   { href: "/admin/imeyli", label: "Изпратени имейли", icon: "mail" },
 ];

@@ -83,3 +83,11 @@ test("a reduction must be below the lowest price of the last 30 days", async ({ 
   await expect(page.getByText("-16%")).toBeVisible();
   await expect(page.getByText(/Най-ниска цена през последните 30 дни/)).toContainText("29,90");
 });
+
+test("admin refreshes a courier office list", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto("/admin/kurieri");
+  await expect(page.getByTestId("offices-speedy")).toHaveText("4");
+  await page.getByRole("button", { name: "Обнови офисите от Спиди" }).click();
+  await expect(page.getByText("Спиди: записани 6 офиса и автомата.")).toBeVisible();
+});

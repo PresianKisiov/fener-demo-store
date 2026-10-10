@@ -2,7 +2,8 @@
  * Runs before `next build` (see "build" in package.json).
  *
  * With DATABASE_URL (online): creates or updates the tables, adds the demo data
- * the first time, and creates the admin from ADMIN_EMAIL / ADMIN_PASSWORD.
+ * the first time, creates the admin from ADMIN_EMAIL / ADMIN_PASSWORD and
+ * refreshes the courier office lists.
  * Without DATABASE_URL (your computer): does nothing, PGlite does this on start.
  */
 import path from "node:path";
@@ -13,6 +14,7 @@ import * as schema from "../src/db/schema";
 import { adminCredentials, ensureAdmin, seedIfEmpty } from "../src/db/seed";
 import type { DB } from "../src/db/types";
 import { cleanDatabaseUrl } from "../src/db/url";
+import { syncOfficesOnBuild } from "../src/db/build-sync";
 
 async function main() {
   const url =
@@ -39,6 +41,7 @@ async function main() {
     await seedIfEmpty(db as unknown as DB);
     await ensureAdmin(db as unknown as DB, creds);
     console.log(`[migrate] Демо данните и админът (${creds.email}) са готови.`);
+    await syncOfficesOnBuild(db as unknown as DB, (m) => console.log(`[migrate] ${m}`));
   } finally {
     await client.end();
   }

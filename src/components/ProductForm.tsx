@@ -34,11 +34,16 @@ export function ProductForm({ product }: { product: Product }) {
         <Field name="name" label="Име" defaultValue={val("name", product.name)} />
         <Field name="shortDescription" label="Кратко описание" defaultValue={val("shortDescription", product.shortDescription)} />
         <Field name="description" label="Описание" defaultValue={val("description", product.description)} textarea />
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field name="price" label="Цена с ДДС, €" defaultValue={state.values?.price ?? (product.priceCents / 100).toFixed(2).replace(".", ",")} hint="Всяка промяна се записва в ценовата история." />
           <div>
             <label htmlFor="stock" className="adm-label">Наличност, бр.</label>
             <input id="stock" name="stock" type="number" min={0} className="adm-input" defaultValue={state.values?.stock ?? product.stock} />
+          </div>
+          <div>
+            <label htmlFor="weightGrams" className="adm-label">Тегло с кутията, г</label>
+            <input id="weightGrams" name="weightGrams" type="number" min={1} className="adm-input" defaultValue={state.values?.weightGrams ?? product.weightGrams} />
+            <p className="mt-1 text-xs text-adm-muted">Куриерът таксува по тегло. Сборът отива в товарителницата.</p>
           </div>
         </div>
         <label className="flex items-start gap-3">

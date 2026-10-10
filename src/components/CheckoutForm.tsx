@@ -1,12 +1,12 @@
 "use client";
 /**
  * Checkout form. It runs in the browser only to make filling it in pleasant:
- * filtering offices and showing a live price preview with the same priceCart()
- * the server uses. When the form is sent, the server validates everything again
- * and recalculates the prices from the database.
+ * loading the offices of the chosen city and showing a live price preview with
+ * the same priceCart() the server uses. When the form is sent, the server
+ * validates everything again and recalculates the prices from the database.
  */
 import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { placeOrderAction, type CheckoutState } from "@/app/actions/checkout";
 import { formatEur } from "@/lib/money";
 import { priceCart, shippingPrice, type PricingLine } from "@/lib/pricing";
@@ -20,7 +20,29 @@ import {
 } from "@/lib/settings";
 import { SubmitButton } from "./SubmitButton";
 
-type Office = { id: string; courier: string; kind: string; city: string; name: string; address: string; hours: string };
+type OfficeCity = { courier: string; kind: string; city: string };
+type Office = { id: string; name: string; address: string; hours: string };
+
+/** Loads the offices of one city from /api/offices (our database, not the courier). */
+function useOffices(courier: string, kind: string, city: string) {
+  const [result, setResult] = useState<{ key: string; offices: Office[]; failed: boolean }>({ key: "", offices: [], failed: false });
+  const key = `${courier}|${kind}|${city}`;
+  useEffect(() => {
+    if (!city || kind === "address") return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ courier, kind, city });
+    fetch(`/api/offices?${params}`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { offices: Office[] }) => setResult({ key, offices: data.offices, failed: false }))
+      .catch((error) => {
+        if (error.name !== "AbortError") setResult({ key, offices: [], failed: true });
+      });
+    // A new city chosen before the answer arrived cancels the old request.
+    return () => controller.abort();
+  }, [courier, kind, city, key]);
+  const ready = result.key === key;
+  return { offices: ready ? result.offices : [], loading: Boolean(city) && !ready, failed: ready && result.failed };
+}
 
 function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? (
@@ -58,7 +80,7 @@ function Choice({
   );
 }
 
-export function CheckoutForm({ lines, offices }: { lines: PricingLine[]; offices: Office[] }) {
+export function CheckoutForm({ lines, cities: allCities }: { lines: PricingLine[]; cities: OfficeCity[] }) {
   const [state, formAction] = useActionState<CheckoutState, FormData>(placeOrderAction, { errors: {}, values: {} });
   const v = state.values;
   const e = state.errors;
@@ -71,12 +93,8 @@ export function CheckoutForm({ lines, offices }: { lines: PricingLine[]; offices
   const subtotal = lines.reduce((s, l) => s + l.unitPriceCents * l.quantity, 0);
   const preview = priceCart({ lines, deliveryType, paymentMethod });
 
-  const matchingOffices = useMemo(
-    () => offices.filter((o) => o.courier === courier && o.kind === deliveryType),
-    [offices, courier, deliveryType],
-  );
-  const cities = [...new Set(matchingOffices.map((o) => o.city))];
-  const cityOffices = matchingOffices.filter((o) => o.city === city);
+  const cities = allCities.filter((c) => c.courier === courier && c.kind === deliveryType).map((c) => c.city);
+  const { offices: cityOffices, loading, failed } = useOffices(courier, deliveryType, city);
 
   const err = (key: string) => (e[key] ? { "aria-invalid": true as const, "aria-describedby": `${key}-error` } : {});
 
@@ -141,13 +159,18 @@ export function CheckoutForm({ lines, offices }: { lines: PricingLine[]; offices
           </div>
 
           {deliveryType === "address" ? (
-            <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_2fr]">
+            <div className="mt-5 grid gap-4 sm:grid-cols-[2fr_1fr]">
               <div>
                 <label htmlFor="city" className="label">Населено място</label>
                 <input id="city" name="city" autoComplete="address-level2" className="field" defaultValue={v.city} {...err("city")} />
                 <FieldError id="city-error" message={e.city} />
               </div>
               <div>
+                <label htmlFor="postCode" className="label">Пощенски код</label>
+                <input id="postCode" name="postCode" autoComplete="postal-code" inputMode="numeric" maxLength={4} placeholder="5300" className="field" defaultValue={v.postCode} {...err("postCode")} />
+                <FieldError id="postCode-error" message={e.postCode} />
+              </div>
+              <div className="sm:col-span-2">
                 <label htmlFor="address" className="label">Улица, номер, вход, етаж</label>
                 <input id="address" name="address" autoComplete="street-address" className="field" defaultValue={v.address} {...err("address")} />
                 <FieldError id="address-error" message={e.address} />
@@ -166,8 +189,16 @@ export function CheckoutForm({ lines, offices }: { lines: PricingLine[]; offices
               </div>
               <div>
                 <label htmlFor="officeId" className="label">{deliveryType === "locker" ? "Автомат" : "Офис"}</label>
-                <select id="officeId" name="officeId" className="field" defaultValue={v.officeId} key={`${courier}-${deliveryType}-${city}`} disabled={!city} {...err("officeId")}>
-                  <option value="">{city ? "Избери от списъка" : "Първо избери град"}</option>
+                <select
+                  id="officeId"
+                  name="officeId"
+                  className="field"
+                  defaultValue={v.officeId}
+                  key={`${courier}-${deliveryType}-${city}-${cityOffices.length}`}
+                  disabled={!city || loading}
+                  {...err("officeId")}
+                >
+                  <option value="">{!city ? "Първо избери град" : loading ? "Зареждаме офисите..." : "Избери от списъка"}</option>
                   {cityOffices.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}, {o.address} ({o.hours})
@@ -175,6 +206,7 @@ export function CheckoutForm({ lines, offices }: { lines: PricingLine[]; offices
                   ))}
                 </select>
                 <FieldError id="officeId-error" message={e.officeId} />
+                {failed && <p className="error-text">Списъкът с офиси не се зареди. Избери града отново.</p>}
               </div>
             </div>
           )}

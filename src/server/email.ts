@@ -9,6 +9,7 @@ import { emails, type Order, type OrderItem } from "@/db/schema";
 import { formatDateTime } from "@/lib/dates";
 import { formatEur } from "@/lib/money";
 import { COURIERS, PAYMENT_METHODS, SHOP, type CourierId, type PaymentMethod } from "@/lib/settings";
+import { courierMode, publicTrackingUrl } from "./shipping/config";
 
 export async function sendEmail(db: DB | Tx, to: string, subject: string, body: string, orderId?: number) {
   await db.insert(emails).values({ toAddress: to, subject, body, orderId });
@@ -50,9 +51,18 @@ export function paymentReceivedEmail(order: Order) {
 }
 
 export function shippedEmail(order: Order) {
+  // A link to the courier's public tracking page works only for real (live) waybills.
+  let link = "";
+  try {
+    if (order.trackingNumber && courierMode(order.courier as CourierId) === "live") {
+      link = `\nПроследи пратката: ${publicTrackingUrl(order.courier, order.trackingNumber)}`;
+    }
+  } catch {
+    // Wrong courier settings must not stop the email.
+  }
   return {
     subject: `Поръчка ${order.number} е изпратена`,
-    body: `Здравей, ${order.customerName}!\n\nПоръчка ${order.number} е предадена на ${COURIERS[order.courier as CourierId]}.\nНомер на товарителницата: ${order.trackingNumber}\nДоставка: ${order.deliveryLabel}${signature}`,
+    body: `Здравей, ${order.customerName}!\n\nПоръчка ${order.number} е предадена на ${COURIERS[order.courier as CourierId]}.\nНомер на товарителницата: ${order.trackingNumber}${link}\nДоставка: ${order.deliveryLabel}${signature}`,
   };
 }
 

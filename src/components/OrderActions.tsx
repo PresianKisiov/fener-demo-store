@@ -7,7 +7,7 @@ import { SubmitButton } from "./SubmitButton";
 const LABELS: Partial<Record<OrderStatus, string>> = {
   confirmed: "Потвърди поръчката",
   packed: "Маркирай като опакована",
-  shipped: "Създай товарителница и изпрати",
+  shipped: "Предадена на куриера",
   delivered: "Маркирай като доставена",
   refused: "Клиентът не прие пратката",
   returned: "Пратката се върна в склада",

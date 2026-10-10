@@ -9,6 +9,7 @@ async function checkoutWithCard(page: import("@playwright/test").Page, email: st
   await page.getByRole("radio", { name: /Спиди/ }).check();
   await page.getByRole("radio", { name: /До адрес/ }).check();
   await page.getByLabel("Населено място").fill("Габрово");
+  await page.getByLabel("Пощенски код").fill("5300");
   await page.getByLabel("Улица, номер, вход, етаж").fill("ул. Радецки 10, ет. 2");
   await page.getByRole("radio", { name: /С карта/ }).check();
   // 24,90 + 5,90 address delivery, no COD fee = 30,80

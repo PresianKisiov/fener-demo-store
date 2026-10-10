@@ -6,6 +6,11 @@ import { auditLog, emails, orderItems, orders, payments, products } from "@/db/s
 import { LampArt } from "@/components/LampArt";
 import { OrderActions } from "@/components/OrderActions";
 import { StatusPill } from "@/components/admin/StatusPill";
+import { CreateShipmentForm, ShippingButton } from "@/components/admin/ShippingForms";
+import { cancelShipmentAction, createShipmentAction, refreshTrackingAction } from "@/app/actions/shipping";
+import { getCourier, MODE_LABEL, MODE_NOTE, type CourierMode } from "@/server/shipping";
+import { publicTrackingUrl } from "@/server/shipping/config";
+import { activeShipment, getOrderShipments, suggestedParcel } from "@/server/shipping/service";
 import { formatDateTime } from "@/lib/dates";
 import { formatEur } from "@/lib/money";
 import { adminTransitions, ORDER_STATUS, type OrderStatus } from "@/lib/order-status";
@@ -19,7 +24,14 @@ const ACTOR: Record<string, string> = {
   seed: "демо данни",
   "webhook:mock": "webhook от тестовия доставчик",
   "webhook:stripe": "webhook от Stripe",
+  "courier:econt": "Еконт, при проверка на статуса",
+  "courier:speedy": "Спиди, при проверка на статуса",
 };
+
+function money(cents: number, currency: string | null) {
+  if (!currency || currency === "EUR" || currency === "€") return formatEur(cents);
+  return `${(cents / 100).toFixed(2).replace(".", ",")} ${currency}`;
+}
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -29,7 +41,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const [order] = await db.select().from(orders).where(eq(orders.id, id));
   if (!order) notFound();
 
-  const [items, paymentRows, log, mails] = await Promise.all([
+  const [items, paymentRows, log, mails, shipmentRows, parcel] = await Promise.all([
     db
       .select({ item: orderItems, illustration: products.illustration })
       .from(orderItems)
@@ -38,9 +50,23 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     db.select().from(payments).where(eq(payments.orderId, id)).orderBy(asc(payments.createdAt)),
     db.select().from(auditLog).where(and(eq(auditLog.entity, "order"), eq(auditLog.entityId, String(id)))).orderBy(asc(auditLog.createdAt)),
     db.select().from(emails).where(eq(emails.orderId, id)).orderBy(asc(emails.createdAt)),
+    getOrderShipments(id),
+    suggestedParcel(id),
   ]);
 
   const status = order.status as OrderStatus;
+  const courier = order.courier as CourierId;
+  const active = activeShipment(shipmentRows);
+  const cancelled = shipmentRows.filter((s) => s.cancelledAt);
+  // The courier settings can be wrong (for example SPEEDY_MODE=live without a password); show that instead of crashing.
+  let mode: CourierMode | null = null;
+  let modeError: string | null = null;
+  try {
+    mode = getCourier(courier).mode;
+  } catch (error) {
+    modeError = error instanceof Error ? error.message : String(error);
+  }
+  const trackingUrl = active?.trackingNumber && active.mode === "live" ? publicTrackingUrl(courier, active.trackingNumber) : null;
 
   return (
     <>
@@ -58,6 +84,92 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
         {status === "pending_payment" && (
           <p className="mt-3 text-sm text-adm-muted">Плащането с карта се потвърждава само от доставчика чрез webhook. Ръчно не може да се маркира като платена.</p>
+        )}
+      </section>
+
+      <section className="adm-card mt-6 p-5 text-sm sm:p-6" aria-labelledby="waybill">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="waybill" className="text-lg font-extrabold">Товарителница</h2>
+          {mode && (
+            <span className="rounded-full bg-adm-blue-soft px-3 py-1 text-xs font-bold text-adm-blue">
+              {COURIERS[courier]}: {MODE_LABEL[mode]}
+            </span>
+          )}
+        </div>
+        {modeError && <p role="alert" className="mt-3 font-semibold text-adm-down">{modeError}</p>}
+
+        {active ? (
+          <div className="mt-4 space-y-4">
+            <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[auto_1fr]">
+              <dt className="text-adm-muted">Номер</dt>
+              <dd className="font-bold tabular" data-testid="tracking-number">{active.trackingNumber ?? "създава се..."}</dd>
+              <dt className="text-adm-muted">Статус при куриера</dt>
+              <dd data-testid="courier-status">
+                {active.statusText ?? "няма информация"}
+                {active.lastCheckedAt && <span className="text-adm-muted">, проверено {formatDateTime(active.lastCheckedAt)}</span>}
+              </dd>
+              <dt className="text-adm-muted">Тегло</dt>
+              <dd className="tabular">{(active.weightGrams / 1000).toFixed(2).replace(".", ",")} кг</dd>
+              {active.costCents !== null && (
+                <>
+                  <dt className="text-adm-muted">Куриерът таксува магазина</dt>
+                  <dd className="tabular">
+                    {money(active.costCents, active.costCurrency)}
+                    <span className="text-adm-muted"> (клиентът плати {formatEur(order.shippingCents + order.codFeeCents)} за доставка и наложен платеж)</span>
+                  </dd>
+                </>
+              )}
+            </dl>
+            <div className="flex flex-wrap items-start gap-2">
+              {active.trackingNumber && (
+                <a href={`/admin/etiket/${active.id}`} target="_blank" rel="noopener" className="adm-btn">Етикет за печат</a>
+              )}
+              {trackingUrl && (
+                <a href={trackingUrl} target="_blank" rel="noopener noreferrer" className="adm-btn-ghost">Виж при куриера</a>
+              )}
+              <ShippingButton action={refreshTrackingAction} fields={{ orderId: order.id }} label="Провери статуса" pendingText="Питаме куриера..." ghost />
+              {status === "packed" && (
+                <ShippingButton action={cancelShipmentAction} fields={{ orderId: order.id }} label="Анулирай товарителницата" pendingText="Анулираме..." ghost />
+              )}
+            </div>
+            {active.events.length > 0 && (
+              <ol className="space-y-1.5 border-l-2 border-adm-line pl-4">
+                {active.events.map((e, i) => (
+                  <li key={i}>
+                    {e.text}
+                    <span className="block text-xs text-adm-muted">
+                      {formatDateTime(new Date(e.time))}
+                      {e.place ? `, ${e.place}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ) : status === "confirmed" || status === "packed" ? (
+          <div className="mt-4">
+            <CreateShipmentForm
+              action={createShipmentAction}
+              orderId={order.id}
+              weightKg={(parcel.weightGrams / 1000).toFixed(2).replace(".", ",")}
+              description={parcel.description}
+              buttonLabel={`Създай товарителница в ${COURIERS[courier]}`}
+            />
+            <p className="mt-3 text-xs text-adm-muted">
+              Теглото е сборът от теглата на продуктите. {order.paymentMethod === "cod" ? `Наложен платеж: куриерът ще събере ${formatEur(order.totalCents)}.` : "Платено с карта: без наложен платеж."}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-4 text-adm-muted">
+            {active === null && ["shipped", "delivered", "refused", "returned"].includes(status)
+              ? `Пратката е изпратена преди връзката с куриерите${order.trackingNumber ? ` (номер ${order.trackingNumber})` : ""}.`
+              : "Товарителница се създава, когато поръчката е потвърдена."}
+          </p>
+        )}
+
+        {mode && <p className="mt-4 text-xs text-adm-muted">{MODE_NOTE[mode]}</p>}
+        {cancelled.length > 0 && (
+          <p className="mt-2 text-xs text-adm-muted">Анулирани: {cancelled.map((c) => c.trackingNumber).join(", ")}</p>
         )}
       </section>
 
@@ -93,7 +205,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <p className="mt-4">
             {COURIERS[order.courier as CourierId]}, {DELIVERY_TYPES[order.deliveryType as DeliveryType].toLowerCase()}: {order.deliveryLabel}
           </p>
-          {order.trackingNumber && <p className="mt-1">Товарителница: <span className="font-bold">{order.trackingNumber}</span></p>}
           <p className="mt-4">Плащане: {PAYMENT_METHODS[order.paymentMethod as PaymentMethod]}</p>
           <p className="mt-1 text-adm-muted">Съгласие за маркетингови имейли: {order.marketingConsent ? "да" : "не"}</p>
         </section>

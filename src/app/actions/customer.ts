@@ -5,8 +5,8 @@
  */
 import { z } from "zod";
 import { getDb } from "@/db/client";
-import { orderItems } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { orderItems, shipments } from "@/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { formatDateTime } from "@/lib/dates";
 import { ORDER_STATUS, type OrderStatus } from "@/lib/order-status";
 import { COURIERS, type CourierId } from "@/lib/settings";
@@ -27,6 +27,8 @@ export type TrackState = {
     courier: string;
     deliveryLabel: string;
     trackingNumber: string | null;
+    courierStatus: string | null;
+    events: { time: string; text: string; place: string | null }[];
     items: { name: string; quantity: number }[];
     canWithdraw: boolean;
   };
@@ -42,6 +44,12 @@ export async function trackOrderAction(_prev: TrackState, formData: FormData): P
 
   const db = await getDb();
   const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+  // The last status we got from the courier (saved by "Провери статусите"), not a live call:
+  // a customer refreshing the page must not hit the courier API every time.
+  const [shipment] = await db
+    .select()
+    .from(shipments)
+    .where(and(eq(shipments.orderId, order.id), isNull(shipments.cancelledAt)));
   return {
     values,
     order: {
@@ -51,6 +59,8 @@ export async function trackOrderAction(_prev: TrackState, formData: FormData): P
       courier: COURIERS[order.courier as CourierId],
       deliveryLabel: order.deliveryLabel,
       trackingNumber: order.trackingNumber,
+      courierStatus: shipment?.statusText ?? null,
+      events: [...(shipment?.events ?? [])].reverse().map((e) => ({ ...e, time: formatDateTime(new Date(e.time)) })),
       items: items.map((i) => ({ name: i.productName, quantity: i.quantity })),
       canWithdraw: canWithdraw(order),
     },

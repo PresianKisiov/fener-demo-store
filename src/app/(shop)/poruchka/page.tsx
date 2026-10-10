@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckoutForm } from "@/components/CheckoutForm";
 import { getCartLines } from "@/server/cart";
-import { listOffices } from "@/server/couriers";
+import { listOfficeCities } from "@/server/couriers";
 
 export const metadata: Metadata = { title: "Поръчка" };
 
 export default async function CheckoutPage() {
-  const [lines, offices] = await Promise.all([getCartLines(), listOffices()]);
+  const [lines, cities] = await Promise.all([getCartLines(), listOfficeCities()]);
 
   if (lines.length === 0) {
     return (
@@ -31,7 +31,7 @@ export default async function CheckoutPage() {
             vatRate: l.vatRate,
             quantity: l.quantity,
           }))}
-          offices={offices}
+          cities={cities}
         />
       </div>
     </>

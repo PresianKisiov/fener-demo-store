@@ -28,6 +28,7 @@ const schema = z
     deliveryType: z.enum(["office", "locker", "address"], { error: "Избери как да ти доставим." }),
     officeId: z.string().optional(),
     city: z.string().trim().max(80).optional(),
+    postCode: z.string().trim().max(10).optional(),
     address: z.string().trim().max(200).optional(),
     paymentMethod: z.enum(["cod", "card"], { error: "Избери начин на плащане." }),
     terms: z.literal("on", { error: "За да поръчаш, приеми общите условия." }),
@@ -36,6 +37,8 @@ const schema = z
   .superRefine((v, ctx) => {
     if (v.deliveryType === "address") {
       if (!v.city || v.city.length < 2) ctx.addIssue({ code: "custom", path: ["city"], message: "Напиши населеното място." });
+      // The courier finds the place by name AND post code: there are several villages with the same name.
+      if (!v.postCode || !/^\d{4}$/.test(v.postCode)) ctx.addIssue({ code: "custom", path: ["postCode"], message: "Пощенският код е 4 цифри, например 5300." });
       if (!v.address || v.address.length < 5) ctx.addIssue({ code: "custom", path: ["address"], message: "Напиши улица и номер." });
     } else if (!v.officeId) {
       ctx.addIssue({ code: "custom", path: ["officeId"], message: v.deliveryType === "locker" ? "Избери автомат." : "Избери офис." });
@@ -64,9 +67,13 @@ export async function placeOrderAction(_prev: CheckoutState, formData: FormData)
   let deliveryLabel: string;
   let city: string;
   let officeId: string | null = null;
+  let postCode: string | null = null;
+  let addressLine: string | null = null;
   if (data.deliveryType === "address") {
     city = data.city!;
-    deliveryLabel = `${data.address}, ${data.city}`;
+    postCode = data.postCode!;
+    addressLine = data.address!;
+    deliveryLabel = `${data.address}, ${data.postCode} ${data.city}`;
   } else {
     const office = await getOffice(data.officeId!);
     if (!office || office.courier !== data.courier || office.kind !== data.deliveryType) {
@@ -93,6 +100,8 @@ export async function placeOrderAction(_prev: CheckoutState, formData: FormData)
         officeId,
         deliveryLabel,
         city,
+        postCode,
+        addressLine,
         paymentMethod: data.paymentMethod,
         marketingConsent: data.marketing === "on",
         lines: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),

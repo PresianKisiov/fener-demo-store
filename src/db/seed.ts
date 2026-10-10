@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { lowestPriceBefore } from "../lib/omnibus";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { priceCart } from "../lib/pricing";
+import { demoOfficeRows } from "./offices";
 import * as schema from "./schema";
 import type { DB } from "./types";
 
@@ -240,28 +241,17 @@ const PRODUCTS: SeedProduct[] = [
   },
 ];
 
-const OFFICES: (typeof schema.courierOffices.$inferInsert)[] = [
-  ["econt", "office", "Габрово", "Еконт Габрово Център", "ул. Демо 3", "пон-пет 9:00-19:00, съб 9:00-13:00"],
-  ["econt", "locker", "Габрово", "Еконтомат Габрово Мол", "бул. Примерен 18", "24/7"],
-  ["econt", "office", "София", "Еконт София Лозенец", "ул. Демо 41", "пон-пет 9:00-20:00, съб 9:00-14:00"],
-  ["econt", "office", "Пловдив", "Еконт Пловдив Тракия", "ул. Демо 12", "пон-пет 9:00-19:00"],
-  ["econt", "office", "Варна", "Еконт Варна Чаталджа", "ул. Демо 7", "пон-пет 9:00-19:00, съб 9:00-13:00"],
-  ["econt", "office", "Велико Търново", "Еконт В. Търново Център", "ул. Демо 25", "пон-пет 9:00-18:30"],
-  ["speedy", "office", "Габрово", "Спиди Габрово", "ул. Демо 9", "пон-пет 9:00-18:30, съб 9:00-13:00"],
-  ["speedy", "locker", "Габрово", "Спиди автомат Габрово Ловеч", "ул. Примерна 54", "24/7"],
-  ["speedy", "office", "София", "Спиди София Младост", "ул. Демо 101", "пон-пет 9:00-20:00"],
-  ["speedy", "office", "Пловдив", "Спиди Пловдив Център", "ул. Демо 4", "пон-пет 9:00-19:00"],
-  ["speedy", "locker", "Варна", "Спиди автомат Варна Левски", "ул. Демо 66", "24/7"],
-  ["speedy", "office", "Велико Търново", "Спиди В. Търново", "ул. Демо 31", "пон-пет 9:00-18:00"],
-].map(([courier, kind, city, name, address, hours], i) => ({
-  id: `${courier}-${String(i + 1).padStart(3, "0")}`,
-  courier,
-  kind,
-  city,
-  name,
-  address,
-  hours,
-}));
+// Packed weight in grams (product + box). Used to suggest the weight on the waybill.
+const WEIGHTS: Record<string, number> = {
+  "lampa-s-shtipka-stranitsa": 250,
+  "lampa-za-kniga-otmetka": 150,
+  "lampa-za-vrat-noshtna-smyana": 300,
+  "nastolna-lampa-arhiv": 1600,
+  "nastolna-lampa-tetradka": 900,
+  "noshtna-lampa-fitil": 450,
+  "led-lenta-nishka-2m": 200,
+  "podova-lampa-kula": 4800,
+};
 
 export async function seedIfEmpty(db: DB) {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(schema.products);
@@ -282,14 +272,14 @@ export async function seedIfEmpty(db: DB) {
 
       const [row] = await tx
         .insert(schema.products)
-        .values({ ...product, priceCents: current.priceCents, ...reduction })
+        .values({ ...product, weightGrams: WEIGHTS[product.slug] ?? 500, priceCents: current.priceCents, ...reduction })
         .returning({ id: schema.products.id });
 
       await tx.insert(schema.priceHistory).values(
         points.map((p) => ({ productId: row.id, ...p, changedBy: "seed" })),
       );
     }
-    await tx.insert(schema.courierOffices).values(OFFICES);
+    await tx.insert(schema.courierOffices).values(demoOfficeRows());
   });
 
   if (process.env.SEED_DEMO_ORDERS !== "false") await seedDemoOrders(db);
@@ -346,7 +336,17 @@ function random(seed: number) {
 const MEN = ["Иван", "Георги", "Николай", "Димитър", "Стефан", "Александър", "Христо", "Калоян", "Мартин", "Борис"];
 const WOMEN = ["Мария", "Елена", "Петя", "Десислава", "Виктория", "Гергана", "Радост", "Теодора", "Невена", "Ивета"];
 const SURNAMES = ["Петров", "Иванов", "Георгиев", "Димитров", "Стоянов", "Николов", "Колев", "Тодоров", "Маринов", "Ангелов"];
-const CITIES = ["Габрово", "София", "Пловдив", "Варна", "Велико Търново", "Бургас", "Русе", "Севлиево"];
+const POST_CODES: Record<string, string> = {
+  Габрово: "5300",
+  София: "1000",
+  Пловдив: "4000",
+  Варна: "9000",
+  "Велико Търново": "5000",
+  Бургас: "8000",
+  Русе: "7000",
+  Севлиево: "5400",
+};
+const CITIES = Object.keys(POST_CODES);
 
 async function seedDemoOrders(db: DB) {
   const r = random(20261008);
@@ -376,6 +376,7 @@ async function seedDemoOrders(db: DB) {
       const deliveryType = deliveryRoll < 0.55 ? "office" : deliveryRoll < 0.7 ? "locker" : "address";
       const office = deliveryType === "address" ? null : pick(offices.filter((o) => o.courier === courier && o.kind === deliveryType));
       const city = office ? office.city : pick(CITIES);
+      const street = `ул. Примерна ${1 + Math.floor(r() * 90)}`;
       const paymentMethod = r() < 0.75 ? "cod" : "card";
 
       const chosen = new Set([pick(products)]);
@@ -415,8 +416,10 @@ async function seedDemoOrders(db: DB) {
           courier,
           deliveryType,
           officeId: office?.id ?? null,
-          deliveryLabel: office ? `${office.name}, ${office.address}, ${office.city}` : `ул. Примерна ${1 + Math.floor(r() * 90)}, ${city}`,
+          deliveryLabel: office ? `${office.name}, ${office.address}, ${office.city}` : `${street}, ${POST_CODES[city]} ${city}`,
           city,
+          postCode: office ? null : POST_CODES[city],
+          addressLine: office ? null : street,
           paymentMethod,
           subtotalCents: totals.subtotalCents,
           shippingCents: totals.shippingCents,

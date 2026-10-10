@@ -36,6 +36,9 @@ export default defineConfig({
       SESSION_SECRET: "e2e-session-secret",
       MOCK_WEBHOOK_SECRET: "e2e-webhook-secret",
       PAYMENT_PROVIDER: "mock",
+      // No network in tests: both couriers are simulated.
+      ECONT_MODE: "mock",
+      SPEEDY_MODE: "mock",
     },
   },
 });

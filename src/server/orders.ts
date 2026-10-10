@@ -7,15 +7,14 @@
  *    writes the audit log and runs the side effects (stock, emails, timestamps).
  */
 import "server-only";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import type { Tx } from "@/db/types";
-import { orderItems, orders, payments, products, withdrawals, type Order } from "@/db/schema";
+import { orderItems, orders, payments, products, shipments, withdrawals, type Order } from "@/db/schema";
 import { canTransition, WITHDRAWABLE, type OrderStatus } from "@/lib/order-status";
 import { priceCart } from "@/lib/pricing";
 import { SHOP, type CourierId, type DeliveryType, type PaymentMethod } from "@/lib/settings";
 import { audit } from "./audit";
-import { createTrackingNumber } from "./couriers";
 import {
   orderConfirmationEmail,
   refundEmail,
@@ -35,6 +34,8 @@ export type NewOrderInput = {
   officeId: string | null;
   deliveryLabel: string;
   city: string;
+  postCode: string | null;
+  addressLine: string | null;
   paymentMethod: PaymentMethod;
   marketingConsent: boolean;
   lines: { productId: number; quantity: number }[];
@@ -81,6 +82,8 @@ export async function createOrder(input: NewOrderInput, baseUrl: string) {
         officeId: input.officeId,
         deliveryLabel: input.deliveryLabel,
         city: input.city,
+        postCode: input.postCode,
+        addressLine: input.addressLine,
         paymentMethod: input.paymentMethod,
         subtotalCents: totals.subtotalCents,
         shippingCents: totals.shippingCents,
@@ -209,17 +212,18 @@ export async function transitionOrder(orderId: number, to: OrderStatus, actor: s
   return db.transaction((tx) => transitionOrderTx(tx, orderId, to, actor));
 }
 
-/** Creates a (demo) waybill and marks the order as shipped. */
+/**
+ * "Предадена на куриера": the parcel with its waybill left the shop.
+ * The waybill itself is created earlier, from the order page (src/server/shipping/service.ts).
+ */
 export async function shipOrder(orderId: number, actor: string) {
   const db = await getDb();
   return db.transaction(async (tx) => {
-    const [order] = await tx.select().from(orders).where(eq(orders.id, orderId));
-    if (!order) throw new OrderError("Поръчката не съществува.");
-    if (order.status !== "packed") throw new OrderError("Товарителница се създава за опакована поръчка.");
-    await tx
-      .update(orders)
-      .set({ trackingNumber: createTrackingNumber(order.courier as CourierId) })
-      .where(eq(orders.id, orderId));
+    const [active] = await tx
+      .select()
+      .from(shipments)
+      .where(and(eq(shipments.orderId, orderId), isNull(shipments.cancelledAt)));
+    if (!active?.trackingNumber) throw new OrderError("Първо създай товарителница (секцията „Товарителница“ по-долу).");
     return transitionOrderTx(tx, orderId, "shipped", actor);
   });
 }

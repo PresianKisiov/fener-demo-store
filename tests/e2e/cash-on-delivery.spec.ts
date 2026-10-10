@@ -17,6 +17,7 @@ test("cash on delivery: order, admin processes it, customer tracks it and withdr
   await page.getByRole("radio", { name: /Еконт/ }).check();
   await page.getByRole("radio", { name: /До офис/ }).check();
   await page.getByLabel("Град", { exact: true }).selectOption("Габрово");
+  // The offices of the city come from /api/offices after the city is chosen.
   await page.getByLabel("Офис", { exact: true }).selectOption({ index: 1 });
   await page.getByRole("radio", { name: /Наложен платеж/ }).check();
   // 2 x 24,90 = 49,80 + 3,90 office + 1,00 COD fee = 54,70
@@ -33,16 +34,33 @@ test("cash on delivery: order, admin processes it, customer tracks it and withdr
   await loginAsAdmin(page);
   await page.goto("/admin/poruchki");
   await page.getByRole("link", { name: orderNumber }).click();
-  for (const [button, status] of [
-    ["Потвърди поръчката", "Потвърдена"],
-    ["Маркирай като опакована", "Опакована"],
-    ["Създай товарителница и изпрати", "Изпратена"],
-    ["Маркирай като доставена", "Доставена"],
-  ]) {
-    await page.getByRole("button", { name: button }).click();
-    await expect(page.getByTestId("order-status")).toHaveText(status);
-  }
-  await expect(page.getByText(/Товарителница: EC\d{10}/)).toBeVisible();
+  await page.getByRole("button", { name: "Потвърди поръчката" }).click();
+  await expect(page.getByTestId("order-status")).toHaveText("Потвърдена");
+
+  // "Предадена на куриера" is refused while there is no waybill.
+  await page.getByRole("button", { name: "Маркирай като опакована" }).click();
+  await expect(page.getByTestId("order-status")).toHaveText("Опакована");
+  await page.getByRole("button", { name: "Предадена на куриера" }).click();
+  await expect(page.getByText("Първо създай товарителница")).toBeVisible();
+
+  // Waybill with the suggested weight (2 x 250 g).
+  await expect(page.getByLabel("Тегло, кг")).toHaveValue("0,50");
+  await page.getByRole("button", { name: "Създай товарителница в Еконт" }).click();
+  await expect(page.getByTestId("tracking-number")).toHaveText(/^EC\d{10}$/);
+  const trackingNumber = await page.getByTestId("tracking-number").textContent();
+
+  // The label opens (the mock courier makes a simple HTML label).
+  const labelHref = await page.getByRole("link", { name: "Етикет за печат" }).getAttribute("href");
+  const label = await page.request.get(labelHref!);
+  expect(label.status()).toBe(200);
+  expect(await label.text()).toContain(trackingNumber!);
+
+  // Each status check moves the mock parcel one step: picked up, then delivered.
+  await page.getByRole("button", { name: "Провери статуса" }).click();
+  await expect(page.getByTestId("order-status")).toHaveText("Изпратена");
+  await page.getByRole("button", { name: "Провери статуса" }).click();
+  await expect(page.getByTestId("order-status")).toHaveText("Доставена");
+  await expect(page.getByTestId("courier-status")).toContainText("Доставена");
 
   // Customer checks the status.
   await page.goto("/prosledyavane");
@@ -50,6 +68,7 @@ test("cash on delivery: order, admin processes it, customer tracks it and withdr
   await page.getByLabel("Имейл", { exact: true }).fill("IVAN@example.com");
   await page.getByRole("button", { name: "Покажи" }).click();
   await expect(page.getByTestId("tracking-status")).toHaveText("Доставена");
+  await expect(page.getByText(`Товарителница: ${trackingNumber}`)).toBeVisible();
 
   // Wrong email reveals nothing.
   await page.getByLabel("Имейл", { exact: true }).fill("someone@example.com");

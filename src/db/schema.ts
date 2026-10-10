@@ -4,6 +4,7 @@
  *
  * Money is always stored as integer cents (2490 = 24,90 €). Never floats.
  */
+import { sql } from "drizzle-orm";
 import {
   boolean,
   integer,
@@ -40,6 +41,8 @@ export const products = pgTable("products", {
   measureUnit: text("measure_unit"),
   measureQuantityMilli: integer("measure_quantity_milli"),
   stock: integer("stock").notNull().default(0),
+  // Weight with the packaging. Couriers price by weight, so the waybill form adds these up.
+  weightGrams: integer("weight_grams").notNull().default(500),
   specs: jsonb("specs").$type<[string, string][]>().notNull().default([]),
   isPublished: boolean("is_published").notNull().default(false),
   // Product safety (GPSR). Publishing is blocked while these are incomplete.
@@ -87,14 +90,22 @@ export const cartItems = pgTable(
   (t) => [primaryKey({ columns: [t.cartId, t.productId] })],
 );
 
+// A copy of the couriers' office lists. The checkout reads from here, not from the
+// courier API, so it stays fast and works even when the courier API is slow or down.
+// "Обнови офисите" in the admin panel (and every online build) replaces the rows.
 export const courierOffices = pgTable("courier_offices", {
+  // `${courier}-${code}`, for example "econt-5306". Stays the same across syncs.
   id: text("id").primaryKey(),
   courier: text("courier").notNull(), // "econt" | "speedy"
+  // The courier's own office code. This is what goes into the waybill.
+  code: text("code").notNull().default(""),
   kind: text("kind").notNull(), // "office" | "locker"
   city: text("city").notNull(),
+  postCode: text("post_code").notNull().default(""),
   name: text("name").notNull(),
   address: text("address").notNull(),
   hours: text("hours").notNull(),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
 });
 
 export const orders = pgTable("orders", {
@@ -113,6 +124,9 @@ export const orders = pgTable("orders", {
   officeId: text("office_id"),
   deliveryLabel: text("delivery_label").notNull(), // office name or full address, as shown to people
   city: text("city").notNull(),
+  // Only for delivery to an address. The courier needs the post code to find the right place.
+  postCode: text("post_code"),
+  addressLine: text("address_line"),
   paymentMethod: text("payment_method").notNull(), // "cod" | "card"
   subtotalCents: integer("subtotal_cents").notNull(),
   shippingCents: integer("shipping_cents").notNull(),
@@ -155,6 +169,39 @@ export const payments = pgTable("payments", {
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Waybills (товарителници). One order has at most one active shipment; a cancelled
+// one stays here for history and a new one can be created.
+export const shipments = pgTable(
+  "shipments",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    courier: text("courier").notNull(),
+    // "mock" (invented by this app), "demo" (courier's test system) or "live" (real parcel).
+    mode: text("mode").notNull(),
+    // Empty for a moment while the courier API is being called (see createShipmentForOrder).
+    trackingNumber: text("tracking_number"),
+    labelUrl: text("label_url"),
+    weightGrams: integer("weight_grams").notNull(),
+    // What the courier charges the shop, as returned by the courier. Not what the customer paid.
+    costCents: integer("cost_cents"),
+    costCurrency: text("cost_currency"),
+    // "creating" | "created" | "in_transit" | "delivered" | "returned" | "cancelled"
+    status: text("status").notNull(),
+    // The courier's own words for the last status, shown to the admin and the customer.
+    statusText: text("status_text"),
+    events: jsonb("events").$type<{ time: string; text: string; place: string | null }[]>().notNull().default([]),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  // The database itself refuses a second active shipment for the same order,
+  // so a double click cannot create two waybills.
+  (t) => [uniqueIndex("shipments_one_active_per_order").on(t.orderId).where(sql`${t.cancelledAt} is null`)],
+);
 
 // Each webhook event is stored once. The unique index makes a replayed
 // event a no-op instead of a second "payment succeeded".
@@ -210,6 +257,7 @@ export type Product = typeof products.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type CourierOffice = typeof courierOffices.$inferSelect;
+export type Shipment = typeof shipments.$inferSelect;
 
 // Admin accounts. The password is never stored, only a scrypt hash of it (see src/lib/password.ts).
 export const admins = pgTable("admins", {

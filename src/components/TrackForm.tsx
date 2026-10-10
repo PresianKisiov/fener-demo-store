@@ -34,6 +34,19 @@ export function TrackForm() {
             {state.order.trackingNumber && (
               <p className="mt-1 text-sm">Товарителница: <span className="font-semibold">{state.order.trackingNumber}</span></p>
             )}
+            {state.order.courierStatus && (
+              <p className="mt-1 text-sm">При куриера: <span className="font-semibold" data-testid="courier-status">{state.order.courierStatus}</span></p>
+            )}
+            {state.order.events.length > 0 && (
+              <ol className="mt-3 space-y-1 border-l-2 border-line pl-4 text-sm">
+                {state.order.events.map((e, i) => (
+                  <li key={i}>
+                    {e.text}
+                    <span className="block text-xs text-ink-soft">{e.time}{e.place ? `, ${e.place}` : ""}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
             {state.order.canWithdraw && (
               <Link href="/otkaz" className="btn-secondary mt-6">Отказ от договора</Link>
             )}
