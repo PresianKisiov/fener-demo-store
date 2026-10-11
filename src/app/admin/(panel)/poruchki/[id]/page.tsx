@@ -11,6 +11,7 @@ import { cancelShipmentAction, createShipmentAction, refreshTrackingAction } fro
 import { getCourier, MODE_LABEL, MODE_NOTE, type CourierMode } from "@/server/shipping";
 import { publicTrackingUrl } from "@/server/shipping/config";
 import { activeShipment, getOrderShipments, suggestedParcel } from "@/server/shipping/service";
+import { auditLabel } from "@/lib/audit-labels";
 import { formatDateTime } from "@/lib/dates";
 import { formatEur } from "@/lib/money";
 import { adminTransitions, ORDER_STATUS, type OrderStatus } from "@/lib/order-status";
@@ -230,7 +231,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <ol className="mt-4 space-y-2 border-l-2 border-adm-line pl-4">
             {log.map((entry) => (
               <li key={entry.id} className="tabular">
-                <span className="font-semibold">{entry.toStatus ? ORDER_STATUS[entry.toStatus as OrderStatus] : entry.action}</span>
+                <span className="font-semibold">{entry.toStatus ? ORDER_STATUS[entry.toStatus as OrderStatus] : auditLabel(entry.action)}</span>
                 <span className="block text-xs text-adm-muted">{formatDateTime(entry.createdAt)}, {ACTOR[entry.actor] ?? entry.actor}</span>
               </li>
             ))}
